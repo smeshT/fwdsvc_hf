@@ -2,54 +2,29 @@
 
 > **This is a fork of [`thatSFguy/reticulum-go`](https://github.com/thatSFguy/reticulum-go).**
 >
-> It exists for **one reason**: upstream rejects the propagation-node announce that
-> current Python LXMF publishes, which makes store-and-forward uploads fail against
-> every modern propagation node, including a stock `lxmd`.
+> **Its purpose is to make `fwdsvc` usable over HF.** `reticulum-go` sizes its link and
+> delivery timeouts for LoRa, and a half-duplex HF link needs far longer. That is what
+> this build is for; the `[timing]` and `[outbound]` sections below are the point.
+>
+> It also carries a second, unrelated fix: upstream rejects the propagation-node announce
+> that current Python LXMF publishes, which breaks store-and-forward uploads against every
+> modern propagation node, including a stock `lxmd`. That was found while working on the
+> timeouts and is included because it blocks the same program.
 >
 > | | |
 > |---|---|
-> | Fork point | `v0.8.1` (`2dcc98c`), identical to upstream `main` |
-> | Fix branch | `fix/propagation-announce-8-elements` |
+> | Fork point | `v0.8.1` (`2dcc98c`), upstream's newest tag |
 > | Files touched | `lxmf/propagation.go`, `lxmf/propagation_test.go` |
+> | Program it was built for | [`fwdsvc`](https://github.com/thatSFguy/reticulum-group-chat) |
 > | Everything else | unmodified upstream |
 >
-> Use the fix branch; `main` here is the untouched upstream commit. Nothing has been
-> reported upstream — that is deliberate.
+> Nothing has been reported upstream — that is deliberate.
 
-## What this fork fixes
+## Purpose: link and retry timeouts for HF
 
-A Reticulum propagation node advertises itself in an announce whose `app_data` is a msgpack
-list. LXMF 1.3.0 appends an eighth element holding fractional stamp costs, and validates it as
-`len(data) > 7` with a 3-element numeric list — marked `TODO: Transitional mechanism, remove
-after 1.6.2` in Python's `pn_announce_data_is_valid`.
-
-`reticulum-go v0.8.1` required exactly seven:
-
-```go
-if len(elems) != 7 {
-    return nil, fmt.Errorf("%w: %d elements, want 7", ErrPropagationAppData, len(elems))
-}
-```
-
-So a Go client refused every current Python propagation node, **including a stock `lxmd` on the
-same machine**, and failed at the announce before any transfer began:
-
-```
-propagation: upload failed: invalid lxmf.propagation announce app_data: 8 elements, want 7
-```
-
-Direct delivery was unaffected, so the symptom read as "store-and-forward is down" rather than
-"the network is broken".
-
-This fork accepts `len(elems) >= 7` and, when element `[7]` is present, requires a 3-element list
-of numerics. A malformed `[7]` still fails with `ErrPropagationAppData`. Elements `[3]`/`[4]`
-limits and `[5]` integer costs are untouched.
-
-## What else this build adds: link and retry timeouts
-
-The second reason this build exists is that `reticulum-go` sizes its delivery timeouts for LoRa,
-and they are too short for a half-duplex HF link. On HF a single frame occupies the channel for
-over ten seconds, so a round trip is measured in minutes, not seconds.
+`reticulum-go` sizes its delivery timeouts for LoRa, and they are too short for a half-duplex
+HF link. On HF a single frame occupies the channel for over ten seconds, so a round trip is
+measured in minutes, not seconds.
 
 Defaults in the library:
 
@@ -107,6 +82,35 @@ dialled from — the hub — not on the members.
 retry begins while the previous attempt is still on the air. `link_send_timeout` must exceed the
 slowest round trip including proof. Both are measurements, not guesses, and both are specific to
 the link they were taken on — **re-measure before copying them to a different band or mode.**
+
+## Secondary fix: propagation-node announces
+
+A Reticulum propagation node advertises itself in an announce whose `app_data` is a msgpack
+list. LXMF 1.3.0 appends an eighth element holding fractional stamp costs, and validates it as
+`len(data) > 7` with a 3-element numeric list — marked `TODO: Transitional mechanism, remove
+after 1.6.2` in Python's `pn_announce_data_is_valid`.
+
+`reticulum-go v0.8.1` required exactly seven:
+
+```go
+if len(elems) != 7 {
+    return nil, fmt.Errorf("%w: %d elements, want 7", ErrPropagationAppData, len(elems))
+}
+```
+
+So a Go client refused every current Python propagation node, **including a stock `lxmd` on the
+same machine**, and failed at the announce before any transfer began:
+
+```
+propagation: upload failed: invalid lxmf.propagation announce app_data: 8 elements, want 7
+```
+
+Direct delivery was unaffected, so the symptom read as "store-and-forward is down" rather than
+"the network is broken".
+
+This fork accepts `len(elems) >= 7` and, when element `[7]` is present, requires a 3-element list
+of numerics. A malformed `[7]` still fails with `ErrPropagationAppData`. Elements `[3]`/`[4]`
+limits and `[5]` integer costs are untouched.
 
 ## How to use it
 
