@@ -1,5 +1,22 @@
 # reticulum-go
 
+> **This is a fork of [`thatSFguy/reticulum-go`](https://github.com/thatSFguy/reticulum-go).**
+>
+> It exists for **one reason**: upstream rejects the propagation-node announce that
+> current Python LXMF publishes, which makes store-and-forward uploads fail against
+> every modern propagation node, including a stock `lxmd`.
+>
+> | | |
+> |---|---|
+> | Fork point | `v0.8.1` (`2dcc98c`), identical to upstream `main` |
+> | Fix branch | `fix/propagation-announce-8-elements` |
+> | Files touched | `lxmf/propagation.go`, `lxmf/propagation_test.go` |
+> | Everything else | unmodified upstream |
+>
+> Use the fix branch; `main` here is the untouched upstream commit. Details and the
+> one-line `go.mod` change needed to depend on this fork are in
+> [FORK.md](FORK.md). Nothing has been reported upstream — that is deliberate.
+
 Pure-Go implementation of the [Reticulum Network Stack](https://reticulum.network/) (RNS) and [LXMF](https://github.com/markqvist/LXMF) — no third-party RNS library, no cgo. Interoperates with the canonical Python `RNS`/`LXMF` and the wider client ecosystem (Sideband, NomadNet, MeshChat).
 
 ```go
