@@ -3,6 +3,7 @@ package lxmf
 import (
 	"bytes"
 	"crypto/sha256"
+	"errors"
 	"testing"
 	"time"
 
@@ -58,6 +59,67 @@ func TestParsePropagationNodeAppDataToleratesNilLimits(t *testing.T) {
 	}
 	if info.PerTransferLimitKB != 0 || info.StampCost != 0 {
 		t.Errorf("nil limits should decode as 0, got %+v", info)
+	}
+}
+
+func TestParsePropagationNodeAppDataToleratesFractionalStampCosts(t *testing.T) {
+	// LXMF >= 1.3.0 appends element [7]: fractional stamp costs.
+	// Stock lxmd announces this shape, and it is legal upstream
+	// (pn_announce_data_is_valid accepts len > 7 after validating [7]).
+	data, err := msgpack.Marshal([]any{
+		false,
+		int64(1700000000),
+		true,
+		256,
+		10240,
+		[]any{16, 3, 18},
+		map[any]any{},
+		[]any{16.0, 3.0, 18.0},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	info, err := ParsePropagationNodeAppData(data)
+	if err != nil {
+		t.Fatalf("8-element announce rejected: %v", err)
+	}
+	if !info.Enabled {
+		t.Error("Enabled = false, want true")
+	}
+	if info.PerTransferLimitKB != 256 {
+		t.Errorf("PerTransferLimitKB = %d, want 256", info.PerTransferLimitKB)
+	}
+	if info.PerSyncLimitKB != 10240 {
+		t.Errorf("PerSyncLimitKB = %d, want 10240", info.PerSyncLimitKB)
+	}
+	if info.StampCost != 16 || info.StampCostFlex != 3 || info.PeeringCost != 18 {
+		t.Errorf("integer costs = %d/%d/%d, want 16/3/18",
+			info.StampCost, info.StampCostFlex, info.PeeringCost)
+	}
+}
+
+func TestParsePropagationNodeAppDataRejectsMalformedFractionalCosts(t *testing.T) {
+	base := func(seventh any) []byte {
+		data, err := msgpack.Marshal([]any{
+			false, int64(1), true, 0, 0, []any{8, 0, 0}, map[any]any{}, seventh,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+
+	for name, seventh := range map[string]any{
+		"[7] scalar":      8,
+		"[7] two entries": []any{1.0, 2.0},
+		"[7] non-numeric": []any{"a", "b", "c"},
+	} {
+		if _, err := ParsePropagationNodeAppData(base(seventh)); err == nil {
+			t.Errorf("%s: accepted, want rejection", name)
+		} else if !errors.Is(err, ErrPropagationAppData) {
+			t.Errorf("%s: err = %v, want ErrPropagationAppData", name, err)
+		}
 	}
 }
 

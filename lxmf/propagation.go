@@ -43,11 +43,17 @@ const maxAnnouncedLimitKB = 1 << 20
 var ErrPropagationAppData = errors.New("invalid lxmf.propagation announce app_data")
 
 // ParsePropagationNodeAppData decodes the §5.8.5 announce payload,
-// mirroring upstream pn_announce_data_is_valid: exactly 7 elements with
+// mirroring upstream pn_announce_data_is_valid: at least 7 elements with
 // type-correct positions. Element [5] MUST be a 3-element list — the
 // spec calls out misparsing it as a single integer as the most common
 // interop break, so we reject that shape explicitly rather than
 // tolerating it.
+//
+// LXMF 1.3.0 appended an eighth element carrying fractional stamp costs,
+// guarded upstream by "TODO: Transitional mechanism, remove after 1.6.2".
+// Upstream therefore requires len >= 7 and validates [7] only when present;
+// requiring exactly 7 made every current Python propagation node — including
+// stock lxmd announcements — unparseable here.
 func ParsePropagationNodeAppData(appData []byte) (*PropagationNodeInfo, error) {
 	if len(appData) == 0 {
 		return nil, fmt.Errorf("%w: empty", ErrPropagationAppData)
@@ -56,8 +62,8 @@ func ParsePropagationNodeAppData(appData []byte) (*PropagationNodeInfo, error) {
 	if err := safeUnmarshal(appData, &elems); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrPropagationAppData, err)
 	}
-	if len(elems) != 7 {
-		return nil, fmt.Errorf("%w: %d elements, want 7", ErrPropagationAppData, len(elems))
+	if len(elems) < 7 {
+		return nil, fmt.Errorf("%w: %d elements, want at least 7", ErrPropagationAppData, len(elems))
 	}
 
 	info := &PropagationNodeInfo{}
@@ -102,6 +108,26 @@ func ParsePropagationNodeAppData(appData []byte) (*PropagationNodeInfo, error) {
 		}
 		*dst = int(v)
 	}
+
+	// Element [7]: fractional stamp costs (LXMF >= 1.3.0). Transitional
+	// upstream; present or absent it does not affect the integer limits
+	// declared at [3]/[4] or the costs at [5].
+	if len(elems) > 7 {
+		var fractional []msgpack.RawMessage
+		if err := safeUnmarshal(elems[7], &fractional); err != nil {
+			return nil, fmt.Errorf("%w: element [7] must be a 3-element list: %v", ErrPropagationAppData, err)
+		}
+		if len(fractional) != 3 {
+			return nil, fmt.Errorf("%w: element [7] has %d entries, want 3", ErrPropagationAppData, len(fractional))
+		}
+		for i := range fractional {
+			var f float64
+			if err := safeUnmarshal(fractional[i], &f); err != nil {
+				return nil, fmt.Errorf("%w: element [7][%d]: %v", ErrPropagationAppData, i, err)
+			}
+		}
+	}
+
 	return info, nil
 }
 
